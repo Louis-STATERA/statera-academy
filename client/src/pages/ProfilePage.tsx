@@ -1,18 +1,28 @@
 /*
  * Design: Neon Terminal / Cyberpunk
  * Profile page: User progression, badges, stats dashboard
+ * + Save & send progress report to RSSI
  */
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, BADGES, LEVELS, getLevel, getNextLevel } from '@/lib/moduleData';
+import { generateReport, generateMailtoLink, downloadReport, downloadReportHTML } from '@/lib/progressReport';
 import NavBar from '@/components/NavBar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X } from 'lucide-react';
 import { Link } from 'wouter';
+import { toast } from 'sonner';
 
 export default function ProfilePage() {
   const { progress, resetProgress } = useProgress();
+  const [showSendPanel, setShowSendPanel] = useState(false);
+  const [userName, setUserName] = useState(() => {
+    try { return localStorage.getItem('statera-username') || ''; } catch { return ''; }
+  });
+  const [nameInput, setNameInput] = useState(userName);
+
   const level = getLevel(progress.totalXP);
   const nextLevel = getNextLevel(progress.totalXP);
   const xpForNext = nextLevel ? nextLevel.minXP - progress.totalXP : 0;
@@ -25,6 +35,47 @@ export default function ProfilePage() {
   const avgScore = completedCount > 0
     ? Math.round(Object.values(progress.moduleScores).reduce((a, b) => a + b, 0) / completedCount)
     : 0;
+
+  const handleSaveName = () => {
+    if (!nameInput.trim()) {
+      toast.error('Veuillez entrer votre nom et prénom');
+      return;
+    }
+    setUserName(nameInput.trim());
+    try { localStorage.setItem('statera-username', nameInput.trim()); } catch {}
+    toast.success('Nom enregistré');
+  };
+
+  const handleSendEmail = () => {
+    if (!userName) {
+      toast.error('Veuillez d\'abord enregistrer votre nom');
+      return;
+    }
+    const report = generateReport(progress, userName);
+    const mailtoLink = generateMailtoLink(report);
+    window.open(mailtoLink, '_blank');
+    toast.success('Votre client email va s\'ouvrir avec le rapport pré-rempli');
+  };
+
+  const handleDownloadTxt = () => {
+    if (!userName) {
+      toast.error('Veuillez d\'abord enregistrer votre nom');
+      return;
+    }
+    const report = generateReport(progress, userName);
+    downloadReport(report);
+    toast.success('Rapport téléchargé au format texte');
+  };
+
+  const handleDownloadHTML = () => {
+    if (!userName) {
+      toast.error('Veuillez d\'abord enregistrer votre nom');
+      return;
+    }
+    const report = generateReport(progress, userName);
+    downloadReportHTML(report);
+    toast.success('Rapport téléchargé au format HTML');
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -42,6 +93,36 @@ export default function ProfilePage() {
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 bg-neon-cyan" style={{ boxShadow: '0 0 8px rgba(0,240,255,0.5)' }} />
               <h1 className="font-mono text-xl font-bold tracking-wider text-foreground">PROFIL AGENT</h1>
+            </div>
+
+            {/* User name input */}
+            <div className="border border-border/30 bg-dark-surface/40 p-4 mb-4">
+              <div className="flex items-center gap-3">
+                <User className="w-4 h-4 text-neon-cyan flex-shrink-0" />
+                <div className="flex-1 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={e => setNameInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); }}
+                    placeholder="Entrez votre nom et prénom..."
+                    className="flex-1 bg-transparent border border-border/30 px-3 py-1.5 font-mono text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-neon-cyan/50"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSaveName}
+                    className="font-mono text-[11px] tracking-wider border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/10"
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" /> ENREGISTRER
+                  </Button>
+                </div>
+              </div>
+              {userName && (
+                <div className="mt-2 ml-7 font-mono text-xs text-muted-foreground">
+                  Identifié comme : <span className="text-neon-cyan">{userName}</span>
+                </div>
+              )}
             </div>
 
             {/* Level display */}
@@ -95,6 +176,77 @@ export default function ProfilePage() {
                 <div className="font-mono text-xl font-bold text-foreground">{progress.badges.length}</div>
                 <div className="font-mono text-[10px] text-muted-foreground tracking-wider">BADGES</div>
               </div>
+            </div>
+          </motion.div>
+
+          {/* Send / Save Progress Panel */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="mb-10"
+          >
+            <div className="border border-neon-cyan/30 bg-dark-surface/40 p-5" style={{ boxShadow: '0 0 15px rgba(0,240,255,0.08)' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Send className="w-4 h-4 text-neon-cyan" />
+                <h2 className="font-mono text-sm font-bold tracking-wider text-foreground">SAUVEGARDER & ENVOYER MA PROGRESSION</h2>
+              </div>
+
+              <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
+                Envoyez votre rapport de progression au RSSI (<span className="text-neon-cyan font-mono text-xs">rssi@statera-corp.com</span>) pour attester de votre formation, ou téléchargez-le pour vos archives personnelles.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Send by email */}
+                <button
+                  onClick={handleSendEmail}
+                  className="flex items-center gap-3 p-4 border border-neon-cyan/20 bg-neon-cyan/5 hover:bg-neon-cyan/10 hover:border-neon-cyan/40 transition-all group cursor-pointer"
+                >
+                  <div className="w-10 h-10 flex items-center justify-center border border-neon-cyan/30 flex-shrink-0" style={{ boxShadow: '0 0 10px rgba(0,240,255,0.15)' }}>
+                    <Mail className="w-5 h-5 text-neon-cyan" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-cyan transition-colors">ENVOYER AU RSSI</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Par email</div>
+                  </div>
+                </button>
+
+                {/* Download TXT */}
+                <button
+                  onClick={handleDownloadTxt}
+                  className="flex items-center gap-3 p-4 border border-neon-green/20 bg-neon-green/5 hover:bg-neon-green/10 hover:border-neon-green/40 transition-all group cursor-pointer"
+                >
+                  <div className="w-10 h-10 flex items-center justify-center border border-neon-green/30 flex-shrink-0" style={{ boxShadow: '0 0 10px rgba(0,255,136,0.15)' }}>
+                    <FileText className="w-5 h-5 text-neon-green" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-green transition-colors">RAPPORT TEXTE</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Télécharger .txt</div>
+                  </div>
+                </button>
+
+                {/* Download HTML */}
+                <button
+                  onClick={handleDownloadHTML}
+                  className="flex items-center gap-3 p-4 border border-neon-magenta/20 bg-neon-magenta/5 hover:bg-neon-magenta/10 hover:border-neon-magenta/40 transition-all group cursor-pointer"
+                >
+                  <div className="w-10 h-10 flex items-center justify-center border border-neon-magenta/30 flex-shrink-0" style={{ boxShadow: '0 0 10px rgba(255,0,102,0.15)' }}>
+                    <Download className="w-5 h-5 text-neon-magenta" />
+                  </div>
+                  <div className="text-left">
+                    <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-magenta transition-colors">RAPPORT HTML</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Télécharger .html</div>
+                  </div>
+                </button>
+              </div>
+
+              {!userName && (
+                <div className="mt-4 p-3 border border-amber-500/30 bg-amber-500/5">
+                  <p className="font-mono text-xs text-amber-400">
+                    &#9888; Veuillez d'abord enregistrer votre nom en haut de la page pour générer votre rapport.
+                  </p>
+                </div>
+              )}
             </div>
           </motion.div>
 
