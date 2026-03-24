@@ -10,7 +10,7 @@ import { MODULES, getLevel, getNextLevel, BADGES } from '@/lib/moduleData';
 import NavBar from '@/components/NavBar';
 import { Clock, Zap, CheckCircle2, Lock, ChevronRight, Trophy, Star } from 'lucide-react';
 
-const HERO_IMG = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663343017296/FPbfJCyecKtnym4RKQrEZz/hero-cyber-agent-6vie6CDuGPxBVWpw26Qw2R.webp';
+const HERO_IMG = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663343017296/FPbfJCyecKtnym4RKQrEZz/flat-hero-SrvxAUuUvmwFDM52thodcG.webp';
 
 function StatCard({ value, label, color }: { value: string | number; label: string; color: string }) {
   return (
@@ -190,7 +190,7 @@ export default function Home() {
       <footer className="border-t border-border/30 py-6">
         <div className="container flex flex-col sm:flex-row items-center justify-between gap-3">
           <span className="font-mono text-[11px] text-muted-foreground tracking-wider">
-            CYBERSAFE_ACADEMY — Formation Cybersécurité 2026
+            STATERA_Academy — Formation Cybersécurité 2026
           </span>
           <span className="font-mono text-[11px] text-muted-foreground/50">
             v1.0 // Micro-Learning Interactif

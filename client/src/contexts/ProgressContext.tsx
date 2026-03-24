@@ -17,7 +17,7 @@ const defaultProgress: UserProgress = {
   badges: [],
 };
 
-const STORAGE_KEY = 'cybersafe-progress';
+const STORAGE_KEY = 'statera-progress';
 
 function loadProgress(): UserProgress {
   try {
