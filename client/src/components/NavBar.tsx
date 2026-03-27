@@ -21,9 +21,14 @@ export default function NavBar() {
       <div className="container flex items-center justify-between h-14">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 group">
-          <Shield className="w-6 h-6 text-neon-cyan" style={{ filter: 'drop-shadow(0 0 6px rgba(0,240,255,0.5))' }} />
+          <img
+            src="https://d2xsxph8kpxj0f.cloudfront.net/310519663343017296/FPbfJCyecKtnym4RKQrEZz/statera-blanc_c6b8b447.webp"
+            alt="STATERA"
+            className="h-5 w-auto object-contain"
+            style={{ filter: 'drop-shadow(0 0 6px rgba(0,240,255,0.4))' }}
+          />
           <span className="font-mono font-bold text-sm tracking-wider text-neon-cyan text-glow-cyan hidden sm:inline">
-            STATERA<span className="text-foreground/60">_Academy</span>
+            <span className="text-foreground/60">_Academy</span>
           </span>
         </Link>
 

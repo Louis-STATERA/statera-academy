@@ -57,7 +57,7 @@ export default function Home() {
             </h1>
 
             <p className="text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed mb-8">
-              6 missions interactives pour devenir le maillon fort de votre entreprise.
+              7 missions interactives pour devenir le maillon fort de votre entreprise.
               Apprenez à détecter les menaces, adopter les bons réflexes et protéger vos données.
             </p>
 

@@ -66,6 +66,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
         'ransomware': 'ransomware-ready',
         'shadow-ai': 'ai-aware',
         'remote-work': 'road-warrior',
+        'rgpd': 'rgpd-guardian',
       };
       if (moduleBadgeMap[moduleId] && !newBadges.includes(moduleBadgeMap[moduleId])) {
         newBadges.push(moduleBadgeMap[moduleId]);
