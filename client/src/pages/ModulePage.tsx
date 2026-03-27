@@ -3,13 +3,14 @@
  * Module page: Learning content + interactive quiz with immediate feedback
  * Phases: Briefing → Learning → Quiz → Debrief (+ Diploma if all completed)
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, type QuizQuestion } from '@/lib/moduleData';
 import NavBar from '@/components/NavBar';
 import CyberDiploma from '@/components/CyberDiploma';
+import { preGenerate } from '@/lib/diplomaGenerator';
 import { ArrowLeft, ChevronRight, CheckCircle2, XCircle, Zap, Target, BookOpen, Award, RotateCcw, Home, GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -85,6 +86,19 @@ export default function ModulePage() {
       const xpEarned = Math.round((mod?.xpReward ?? 0) * (finalScore / 100));
       completeModule(mod?.id ?? '', finalScore, xpEarned);
       setPhase('debrief');
+      // Pre-generate diploma in background if this completes all modules
+      if (willCompleteAll) {
+        const storedName = localStorage.getItem('statera-username') || '';
+        if (storedName) {
+          // We need the updated progress, so we schedule it
+          setTimeout(() => {
+            const stored = localStorage.getItem('statera-progress');
+            if (stored) {
+              try { preGenerate(storedName, JSON.parse(stored)); } catch {}
+            }
+          }, 500);
+        }
+      }
     }
   }
 

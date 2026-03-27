@@ -3,7 +3,7 @@
  * Profile page: User progression, badges, stats dashboard
  * + Save & send progress report to RSSI
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, BADGES, LEVELS, getLevel, getNextLevel } from '@/lib/moduleData';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X, Award, GraduationCap } from 'lucide-react';
 import CyberDiploma from '@/components/CyberDiploma';
+import { preGenerate } from '@/lib/diplomaGenerator';
 import { Link } from 'wouter';
 import { toast } from 'sonner';
 
@@ -43,10 +44,22 @@ export default function ProfilePage() {
       toast.error('Veuillez entrer votre nom et prénom');
       return;
     }
-    setUserName(nameInput.trim());
-    try { localStorage.setItem('statera-username', nameInput.trim()); } catch {}
+    const name = nameInput.trim();
+    setUserName(name);
+    try { localStorage.setItem('statera-username', name); } catch {}
     toast.success('Nom enregistré');
+    // Pre-generate diploma in background (non-blocking)
+    if (completedCount === totalModules) {
+      preGenerate(name, progress);
+    }
   };
+
+  // Auto pre-generate when all modules are completed and name is set
+  useEffect(() => {
+    if (userName && completedCount === totalModules) {
+      preGenerate(userName, progress);
+    }
+  }, [userName, completedCount, totalModules, progress]);
 
   const handleSendEmail = () => {
     if (!userName) {
