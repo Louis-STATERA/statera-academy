@@ -1,12 +1,13 @@
 /*
  * Design: Neon Terminal / Cyberpunk
- * CyberDiploma: Full-screen diploma rendered via HTML/CSS with download as image
+ * CyberDiploma: Full-screen diploma rendered via HTML/CSS with download as PDF or JPG
  * Triggered when all modules are completed
  * Includes STATERA logo and 12-month expiration date
+ * Background is forced to black (#0a0a0f)
  */
-import { useRef, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { Download, X } from 'lucide-react';
+import { useRef, useCallback, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Download, X, FileText, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { type UserProgress, MODULES, getLevel } from '@/lib/moduleData';
 
@@ -20,6 +21,9 @@ interface CyberDiplomaProps {
 
 export default function CyberDiploma({ userName, progress, onClose }: CyberDiplomaProps) {
   const diplomaRef = useRef<HTMLDivElement>(null);
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingFormat, setGeneratingFormat] = useState<'pdf' | 'jpg' | null>(null);
 
   const level = getLevel(progress.totalXP);
   const avgScore = progress.completedModules.length > 0
@@ -40,29 +44,68 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
   });
 
   const today = formatDate(obtentionDate);
-  const expiry = formatDate(expirationDate);
 
-  const handleDownload = useCallback(async () => {
+  const fileNameBase = `Diplome_STATERA_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`;
+
+  const captureCanvas = useCallback(async () => {
     const el = diplomaRef.current;
-    if (!el) return;
+    if (!el) return null;
+    const { default: html2canvas } = await import('html2canvas');
+    return html2canvas(el, {
+      backgroundColor: '#0a0a0f',
+      scale: 3,
+      useCORS: true,
+      logging: false,
+    });
+  }, []);
 
+  const handleDownloadJPG = useCallback(async () => {
+    setIsGenerating(true);
+    setGeneratingFormat('jpg');
     try {
-      const { default: html2canvas } = await import('html2canvas');
-      const canvas = await html2canvas(el, {
-        backgroundColor: '#0a0a0f',
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
+      const canvas = await captureCanvas();
+      if (!canvas) return;
       const link = document.createElement('a');
-      link.download = `Diplome_STATERA_${userName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.download = `${fileNameBase}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
       link.click();
     } catch (err) {
-      console.error('Download failed:', err);
-      window.print();
+      console.error('JPG download failed:', err);
+    } finally {
+      setIsGenerating(false);
+      setGeneratingFormat(null);
+      setShowFormatMenu(false);
     }
-  }, [userName]);
+  }, [captureCanvas, fileNameBase]);
+
+  const handleDownloadPDF = useCallback(async () => {
+    setIsGenerating(true);
+    setGeneratingFormat('pdf');
+    try {
+      const canvas = await captureCanvas();
+      if (!canvas) return;
+      const { jsPDF } = await import('jspdf');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      // Landscape A4-ish proportions based on diploma aspect ratio
+      const pdfWidth = 297; // mm (A4 landscape width)
+      const pdfHeight = (imgHeight / imgWidth) * pdfWidth;
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: [pdfWidth, pdfHeight],
+      });
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${fileNameBase}.pdf`);
+    } catch (err) {
+      console.error('PDF download failed:', err);
+    } finally {
+      setIsGenerating(false);
+      setGeneratingFormat(null);
+      setShowFormatMenu(false);
+    }
+  }, [captureCanvas, fileNameBase]);
 
   return (
     <motion.div
@@ -70,17 +113,112 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)' }}
+      style={{ background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(8px)' }}
     >
       {/* Controls */}
       <div className="absolute top-4 right-4 flex gap-2 z-10">
-        <Button
-          onClick={handleDownload}
-          className="font-mono text-xs tracking-wider gap-2"
-          style={{ background: '#00f0ff', color: '#0a0a0f' }}
-        >
-          <Download className="w-4 h-4" /> TÉLÉCHARGER
-        </Button>
+        <div className="relative">
+          <Button
+            onClick={() => setShowFormatMenu(!showFormatMenu)}
+            className="font-mono text-xs tracking-wider gap-2"
+            style={{ background: '#00f0ff', color: '#0a0a0f' }}
+            disabled={isGenerating}
+          >
+            <Download className="w-4 h-4" />
+            {isGenerating ? 'GÉNÉRATION...' : 'TÉLÉCHARGER'}
+          </Button>
+
+          {/* Format dropdown */}
+          <AnimatePresence>
+            {showFormatMenu && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '8px',
+                  background: '#0f1117',
+                  border: '1px solid rgba(0,240,255,0.2)',
+                  minWidth: '200px',
+                  zIndex: 100,
+                  overflow: 'hidden',
+                }}
+              >
+                <button
+                  onClick={handleDownloadPDF}
+                  disabled={isGenerating}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: '100%',
+                    padding: '14px 16px',
+                    background: generatingFormat === 'pdf' ? 'rgba(0,240,255,0.1)' : 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid rgba(0,240,255,0.08)',
+                    color: '#e2e8f0',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '12px',
+                    letterSpacing: '1px',
+                    cursor: isGenerating ? 'wait' : 'pointer',
+                    textAlign: 'left',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => { if (!isGenerating) e.currentTarget.style.background = 'rgba(0,240,255,0.08)'; }}
+                  onMouseLeave={(e) => { if (!isGenerating) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <FileText style={{ width: '18px', height: '18px', color: '#ff3366' }} />
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>
+                      {generatingFormat === 'pdf' ? 'Génération...' : 'Format PDF'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                      Document haute qualité
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleDownloadJPG}
+                  disabled={isGenerating}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    width: '100%',
+                    padding: '14px 16px',
+                    background: generatingFormat === 'jpg' ? 'rgba(0,240,255,0.1)' : 'transparent',
+                    border: 'none',
+                    color: '#e2e8f0',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '12px',
+                    letterSpacing: '1px',
+                    cursor: isGenerating ? 'wait' : 'pointer',
+                    textAlign: 'left',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => { if (!isGenerating) e.currentTarget.style.background = 'rgba(0,240,255,0.08)'; }}
+                  onMouseLeave={(e) => { if (!isGenerating) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <Image style={{ width: '18px', height: '18px', color: '#00ff88' }} />
+                  <div>
+                    <div style={{ fontWeight: 'bold' }}>
+                      {generatingFormat === 'jpg' ? 'Génération...' : 'Format JPG'}
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                      Image haute résolution
+                    </div>
+                  </div>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         <Button
           onClick={onClose}
           variant="outline"
@@ -90,6 +228,14 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
           <X className="w-4 h-4" />
         </Button>
       </div>
+
+      {/* Click outside to close format menu */}
+      {showFormatMenu && (
+        <div
+          className="fixed inset-0 z-[9]"
+          onClick={() => setShowFormatMenu(false)}
+        />
+      )}
 
       {/* Diploma card */}
       <motion.div
@@ -290,7 +436,7 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
               </div>
             </div>
 
-            {/* Modules completed list */}
+            {/* Modules completed */}
             <div style={{
               display: 'flex',
               justifyContent: 'center',
