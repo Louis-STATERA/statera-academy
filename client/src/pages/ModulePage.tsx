@@ -1,7 +1,7 @@
 /*
  * Design: Neon Terminal / Cyberpunk
  * Module page: Learning content + interactive quiz with immediate feedback
- * Phases: Briefing → Learning → Quiz → Debrief
+ * Phases: Briefing → Learning → Quiz → Debrief (+ Diploma if all completed)
  */
 import { useState, useMemo } from 'react';
 import { useParams, useLocation } from 'wouter';
@@ -9,7 +9,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, type QuizQuestion } from '@/lib/moduleData';
 import NavBar from '@/components/NavBar';
-import { ArrowLeft, ChevronRight, CheckCircle2, XCircle, Zap, Target, BookOpen, Award, RotateCcw, Home } from 'lucide-react';
+import CyberDiploma from '@/components/CyberDiploma';
+import { ArrowLeft, ChevronRight, CheckCircle2, XCircle, Zap, Target, BookOpen, Award, RotateCcw, Home, GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
@@ -18,7 +19,7 @@ type Phase = 'briefing' | 'learning' | 'quiz' | 'debrief';
 export default function ModulePage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
-  const { completeModule, getModuleScore } = useProgress();
+  const { progress, completeModule, getModuleScore } = useProgress();
 
   const mod = useMemo(() => MODULES.find(m => m.id === id), [id]);
 
@@ -27,6 +28,12 @@ export default function ModulePage() {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [answers, setAnswers] = useState<Record<string, boolean>>({});
+  const [showDiploma, setShowDiploma] = useState(false);
+
+  // Get user name from localStorage
+  const userName = (() => {
+    try { return localStorage.getItem('statera-username') || ''; } catch { return ''; }
+  })();
 
   if (!mod) {
     return (
@@ -47,6 +54,12 @@ export default function ModulePage() {
   const correctCount = Object.values(answers).filter(Boolean).length;
   const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
   const previousBest = getModuleScore(mod.id);
+
+  // Check if all modules will be completed after this one
+  const allModuleIds = MODULES.map(m => m.id);
+  const willCompleteAll = allModuleIds.every(
+    mId => mId === mod.id || progress.completedModules.includes(mId)
+  );
 
   function handleSelectAnswer(optionId: string) {
     if (showExplanation) return;
@@ -86,6 +99,17 @@ export default function ModulePage() {
   return (
     <div className="min-h-screen bg-background">
       <NavBar />
+
+      {/* Diploma overlay */}
+      <AnimatePresence>
+        {showDiploma && (
+          <CyberDiploma
+            userName={userName}
+            progress={progress}
+            onClose={() => setShowDiploma(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <div className="pt-14">
         {/* Top bar with module info */}
@@ -246,45 +270,50 @@ export default function ModulePage() {
                   />
                 </div>
 
-                {/* Question type badge */}
+                {/* Difficulty badge */}
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="font-mono text-[10px] tracking-wider px-2 py-1 border border-border/40 text-muted-foreground">
-                    {question.type === 'scenario' ? 'SCÉNARIO' : question.type === 'true-false' ? 'VRAI OU FAUX' : 'QCM'}
+                  <span className={`font-mono text-[10px] tracking-wider px-2 py-0.5 border ${
+                    question.difficulty === 'easy' ? 'border-neon-green/30 text-neon-green' :
+                    question.difficulty === 'medium' ? 'border-neon-amber/30 text-neon-amber' :
+                    'border-neon-magenta/30 text-neon-magenta'
+                  }`}>
+                    {question.difficulty === 'easy' ? 'FACILE' : question.difficulty === 'medium' ? 'INTERMÉDIAIRE' : 'AVANCÉ'}
                   </span>
-                  <span className="font-mono text-[10px] tracking-wider px-2 py-1 border text-muted-foreground"
-                    style={{ borderColor: question.difficulty === 'hard' ? '#ff006640' : question.difficulty === 'medium' ? '#f59e0b40' : '#00ff8840', color: question.difficulty === 'hard' ? '#ff0066' : question.difficulty === 'medium' ? '#f59e0b' : '#00ff88' }}>
-                    {question.difficulty === 'hard' ? 'DIFFICILE' : question.difficulty === 'medium' ? 'INTERMÉDIAIRE' : 'FACILE'}
+                  <span className="font-mono text-[10px] tracking-wider text-muted-foreground">
+                    {question.type === 'true-false' ? 'VRAI / FAUX' : question.type === 'scenario' ? 'SCÉNARIO' : 'QCM'}
                   </span>
                 </div>
 
                 {/* Question */}
-                <h2 className="text-lg sm:text-xl font-semibold text-foreground leading-relaxed mb-2">
+                <h2 className="font-mono text-lg font-bold text-foreground mb-2 leading-relaxed">
                   {question.question}
                 </h2>
+
                 {question.context && (
-                  <p className="text-sm text-muted-foreground italic mb-6">{question.context}</p>
+                  <div className="border-l-2 border-neon-cyan/30 pl-4 mb-6">
+                    <p className="text-sm text-muted-foreground italic leading-relaxed">{question.context}</p>
+                  </div>
                 )}
-                {!question.context && <div className="mb-6" />}
 
                 {/* Options */}
                 <div className="space-y-3 mb-6">
                   {question.options.map((option) => {
                     const isSelected = selectedAnswer === option.id;
                     const isCorrect = option.isCorrect;
-                    let borderColor = 'rgba(255,255,255,0.08)';
-                    let bgColor = 'transparent';
+                    let borderColor = 'border-border/30';
+                    let bgColor = 'bg-dark-surface/40';
 
                     if (showExplanation) {
                       if (isCorrect) {
-                        borderColor = '#00ff88';
-                        bgColor = 'rgba(0,255,136,0.08)';
+                        borderColor = 'border-neon-green/50';
+                        bgColor = 'bg-neon-green/10';
                       } else if (isSelected && !isCorrect) {
-                        borderColor = '#ff0066';
-                        bgColor = 'rgba(255,0,102,0.08)';
+                        borderColor = 'border-neon-magenta/50';
+                        bgColor = 'bg-neon-magenta/10';
                       }
                     } else if (isSelected) {
-                      borderColor = mod.color;
-                      bgColor = `${mod.color}10`;
+                      borderColor = 'border-neon-cyan/50';
+                      bgColor = 'bg-neon-cyan/5';
                     }
 
                     return (
@@ -292,11 +321,14 @@ export default function ModulePage() {
                         key={option.id}
                         onClick={() => handleSelectAnswer(option.id)}
                         disabled={showExplanation}
-                        className="w-full text-left p-4 border transition-all duration-200"
-                        style={{ borderColor, background: bgColor }}
+                        className={`w-full text-left border ${borderColor} ${bgColor} p-4 transition-all ${!showExplanation ? 'hover:border-neon-cyan/30' : ''}`}
                       >
                         <div className="flex items-start gap-3">
-                          <span className="font-mono text-sm font-bold text-muted-foreground mt-0.5 w-6 flex-shrink-0">
+                          <span className={`font-mono text-sm font-bold flex-shrink-0 mt-0.5 ${
+                            showExplanation && isCorrect ? 'text-neon-green' :
+                            showExplanation && isSelected && !isCorrect ? 'text-neon-magenta' :
+                            isSelected ? 'text-neon-cyan' : 'text-muted-foreground'
+                          }`}>
                             {option.id.toUpperCase()}.
                           </span>
                           <span className="text-sm text-foreground leading-relaxed">{option.text}</span>
@@ -408,6 +440,44 @@ export default function ModulePage() {
                     +{Math.round(mod.xpReward * (score / 100))} XP gagnés
                   </span>
                 </div>
+
+                {/* All modules completed banner */}
+                {willCompleteAll && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="mb-6"
+                  >
+                    <div
+                      className="border border-neon-cyan/40 p-5"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(0,240,255,0.08) 0%, rgba(0,255,136,0.05) 100%)',
+                        boxShadow: '0 0 30px rgba(0,240,255,0.1)',
+                      }}
+                    >
+                      <GraduationCap className="w-8 h-8 text-neon-cyan mx-auto mb-3" style={{ filter: 'drop-shadow(0 0 10px rgba(0,240,255,0.5))' }} />
+                      <h3 className="font-mono text-base font-bold text-neon-cyan text-glow-cyan mb-2 tracking-wider">
+                        FORMATION COMPLÈTE !
+                      </h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Vous avez terminé tous les modules de la formation STATERA_Academy.<br />
+                        Votre diplôme de Sensibilisation Cyber est prêt !
+                      </p>
+                      <Button
+                        onClick={() => setShowDiploma(true)}
+                        className="font-mono tracking-wider gap-2"
+                        style={{
+                          background: 'linear-gradient(135deg, #00f0ff, #00ff88)',
+                          color: '#0a0a0f',
+                          boxShadow: '0 0 20px rgba(0,240,255,0.3)',
+                        }}
+                      >
+                        <Award className="w-4 h-4" /> OBTENIR MON DIPLÔME
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
 
                 {/* Question breakdown */}
                 <div className="text-left mb-8">

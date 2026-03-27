@@ -11,13 +11,15 @@ import { generateReport, generateMailtoLink, downloadReport, downloadReportHTML 
 import NavBar from '@/components/NavBar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X } from 'lucide-react';
+import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X, Award, GraduationCap } from 'lucide-react';
+import CyberDiploma from '@/components/CyberDiploma';
 import { Link } from 'wouter';
 import { toast } from 'sonner';
 
 export default function ProfilePage() {
   const { progress, resetProgress } = useProgress();
   const [showSendPanel, setShowSendPanel] = useState(false);
+  const [showDiploma, setShowDiploma] = useState(false);
   const [userName, setUserName] = useState(() => {
     try { return localStorage.getItem('statera-username') || ''; } catch { return ''; }
   });
@@ -80,6 +82,17 @@ export default function ProfilePage() {
   return (
     <div className="min-h-screen bg-background">
       <NavBar />
+
+      {/* Diploma overlay */}
+      <AnimatePresence>
+        {showDiploma && (
+          <CyberDiploma
+            userName={userName}
+            progress={progress}
+            onClose={() => setShowDiploma(false)}
+          />
+        )}
+      </AnimatePresence>
 
       <div className="container pt-20 pb-12">
         <div className="max-w-3xl mx-auto">
@@ -249,6 +262,44 @@ export default function ProfilePage() {
               )}
             </div>
           </motion.div>
+
+          {/* Diploma section - visible when all modules completed */}
+          {completedCount === totalModules && completedCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
+              className="mb-10"
+            >
+              <div
+                className="border border-neon-cyan/40 p-6 text-center"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(0,240,255,0.06) 0%, rgba(0,255,136,0.04) 50%, rgba(255,0,102,0.04) 100%)',
+                  boxShadow: '0 0 30px rgba(0,240,255,0.08)',
+                }}
+              >
+                <GraduationCap className="w-10 h-10 text-neon-cyan mx-auto mb-3" style={{ filter: 'drop-shadow(0 0 12px rgba(0,240,255,0.5))' }} />
+                <h2 className="font-mono text-lg font-bold text-neon-cyan text-glow-cyan mb-2 tracking-wider">
+                  FORMATION COMPLÈTE !
+                </h2>
+                <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
+                  Félicitations ! Vous avez terminé l'ensemble du programme de sensibilisation cyber STATERA_Academy.
+                  Téléchargez votre diplôme officiel ci-dessous.
+                </p>
+                <Button
+                  onClick={() => setShowDiploma(true)}
+                  className="font-mono tracking-wider gap-2 px-8 py-5 text-base"
+                  style={{
+                    background: 'linear-gradient(135deg, #00f0ff, #00ff88)',
+                    color: '#0a0a0f',
+                    boxShadow: '0 0 25px rgba(0,240,255,0.3)',
+                  }}
+                >
+                  <Award className="w-5 h-5" /> OBTENIR MON DIPLÔME
+                </Button>
+              </div>
+            </motion.div>
+          )}
 
           {/* Modules progress */}
           <motion.div
