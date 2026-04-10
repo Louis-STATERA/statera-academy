@@ -1,15 +1,17 @@
 /*
  * Design: Neon Terminal / Cyberpunk
  * NavBar: Top navigation bar with glowing cyan accents, monospace branding
+ * Shows sync status and auth state
  */
 import { Link, useLocation } from 'wouter';
 import { useProgress } from '@/contexts/ProgressContext';
 import { getLevel, getNextLevel } from '@/lib/moduleData';
-import { Shield, User, Home } from 'lucide-react';
+import { Shield, User, Home, Cloud, CloudOff, Loader2, LogIn } from 'lucide-react';
+import { getLoginUrl } from '@/const';
 
 export default function NavBar() {
   const [location] = useLocation();
-  const { progress } = useProgress();
+  const { progress, isSyncing, isAuthenticated, userName } = useProgress();
   const level = getLevel(progress.totalXP);
   const nextLevel = getNextLevel(progress.totalXP);
   const xpProgress = nextLevel
@@ -48,8 +50,31 @@ export default function NavBar() {
           </Link>
         </div>
 
-        {/* XP bar */}
+        {/* Right section: sync status + XP bar */}
         <div className="flex items-center gap-3">
+          {/* Sync/Auth indicator */}
+          <div className="hidden sm:flex items-center gap-1.5">
+            {isAuthenticated ? (
+              <div className="flex items-center gap-1" title={`Connecté${userName ? ` — ${userName}` : ''} • Progression synchronisée`}>
+                {isSyncing ? (
+                  <Loader2 className="w-3 h-3 text-neon-cyan animate-spin" />
+                ) : (
+                  <Cloud className="w-3 h-3 text-neon-green" />
+                )}
+                <span className="font-mono text-[9px] text-neon-green/70 tracking-wider">SYNC</span>
+              </div>
+            ) : (
+              <a
+                href={getLoginUrl()}
+                className="flex items-center gap-1 opacity-60 hover:opacity-100 transition-opacity"
+                title="Se connecter pour sauvegarder sa progression"
+              >
+                <CloudOff className="w-3 h-3 text-muted-foreground" />
+                <span className="font-mono text-[9px] text-muted-foreground tracking-wider">LOCAL</span>
+              </a>
+            )}
+          </div>
+
           <div className="hidden sm:flex flex-col items-end gap-0.5">
             <span className="font-mono text-[10px] tracking-wider" style={{ color: level.color }}>
               Nv.{level.level} {level.title}

@@ -8,8 +8,8 @@ import { ProgressProvider } from "./contexts/ProgressContext";
 import Home from "./pages/Home";
 import ModulePage from "./pages/ModulePage";
 import ProfilePage from "./pages/ProfilePage";
-
 function Router() {
+  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
       <Route path="/" component={Home} />

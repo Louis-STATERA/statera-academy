@@ -2,29 +2,47 @@
  * Design: Neon Terminal / Cyberpunk
  * Profile page: User progression, badges, stats dashboard
  * + Save & send progress report to RSSI
+ * + Backend integration: auth user name, diploma upload to S3
  */
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, BADGES, LEVELS, getLevel, getNextLevel } from '@/lib/moduleData';
-import { generateReport, generateMailtoLink, downloadReport, downloadReportHTML } from '@/lib/progressReport';
+import { generateReport, generateMailtoLink, downloadReport, downloadReportHTML, formatReportText } from '@/lib/progressReport';
 import NavBar from '@/components/NavBar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X, Award, GraduationCap } from 'lucide-react';
+import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X, Award, GraduationCap, Cloud, CloudOff, LogIn } from 'lucide-react';
 import CyberDiploma from '@/components/CyberDiploma';
 import { preGenerate } from '@/lib/diplomaGenerator';
 import { Link } from 'wouter';
 import { toast } from 'sonner';
+import { trpc } from '@/lib/trpc';
+import { getLoginUrl } from '@/const';
 
 export default function ProfilePage() {
-  const { progress, resetProgress } = useProgress();
-  const [showSendPanel, setShowSendPanel] = useState(false);
+  const { progress, resetProgress, isAuthenticated, userName: authUserName } = useProgress();
   const [showDiploma, setShowDiploma] = useState(false);
-  const [userName, setUserName] = useState(() => {
+  
+  // Use auth name if available, otherwise fall back to localStorage
+  const [localName, setLocalName] = useState(() => {
     try { return localStorage.getItem('statera-username') || ''; } catch { return ''; }
   });
-  const [nameInput, setNameInput] = useState(userName);
+  const [nameInput, setNameInput] = useState(authUserName || localName);
+  
+  // Effective user name: auth name takes priority
+  const userName = authUserName || localName;
+
+  // Update nameInput when auth name loads
+  useEffect(() => {
+    if (authUserName && !nameInput) {
+      setNameInput(authUserName);
+    }
+  }, [authUserName]);
+
+  // tRPC mutations for backend integration
+  const reportUploadMutation = trpc.report.upload.useMutation();
+  const reportSendMutation = trpc.report.sendToRSSI.useMutation();
 
   const level = getLevel(progress.totalXP);
   const nextLevel = getNextLevel(progress.totalXP);
@@ -45,7 +63,7 @@ export default function ProfilePage() {
       return;
     }
     const name = nameInput.trim();
-    setUserName(name);
+    setLocalName(name);
     try { localStorage.setItem('statera-username', name); } catch {}
     toast.success('Nom enregistré');
     // Pre-generate diploma in background (non-blocking)
@@ -61,18 +79,46 @@ export default function ProfilePage() {
     }
   }, [userName, completedCount, totalModules, progress]);
 
-  const handleSendEmail = () => {
+  const handleSendEmail = async () => {
     if (!userName) {
       toast.error('Veuillez d\'abord enregistrer votre nom');
       return;
     }
     const report = generateReport(progress, userName);
-    const mailtoLink = generateMailtoLink(report);
-    window.open(mailtoLink, '_blank');
-    toast.success('Votre client email va s\'ouvrir avec le rapport pré-rempli');
+    
+    // If authenticated, also send notification to project owner and upload report
+    if (isAuthenticated) {
+      try {
+        const reportText = formatReportText(report);
+        await Promise.all([
+          reportSendMutation.mutateAsync({
+            userName,
+            reportSummary: reportText,
+          }),
+          reportUploadMutation.mutateAsync({
+            content: reportText,
+            userName,
+            format: 'txt',
+          }),
+        ]);
+        toast.success('Rapport envoyé au RSSI et sauvegardé dans le cloud');
+      } catch (err) {
+        console.warn('[Report] Backend send failed, falling back to mailto:', err);
+        // Fallback to mailto
+        const mailtoLink = generateMailtoLink(report);
+        window.open(mailtoLink, '_blank');
+        toast.info('Ouverture du client email (envoi backend indisponible)');
+        return;
+      }
+    } else {
+      // Not authenticated: use mailto fallback
+      const mailtoLink = generateMailtoLink(report);
+      window.open(mailtoLink, '_blank');
+      toast.success('Votre client email va s\'ouvrir avec le rapport pré-rempli');
+    }
   };
 
-  const handleDownloadTxt = () => {
+  const handleDownloadTxt = async () => {
     if (!userName) {
       toast.error('Veuillez d\'abord enregistrer votre nom');
       return;
@@ -80,9 +126,22 @@ export default function ProfilePage() {
     const report = generateReport(progress, userName);
     downloadReport(report);
     toast.success('Rapport téléchargé au format texte');
+
+    // Also upload to S3 if authenticated
+    if (isAuthenticated) {
+      try {
+        await reportUploadMutation.mutateAsync({
+          content: formatReportText(report),
+          userName,
+          format: 'txt',
+        });
+      } catch (err) {
+        console.warn('[Report] Failed to upload to cloud:', err);
+      }
+    }
   };
 
-  const handleDownloadHTML = () => {
+  const handleDownloadHTML = async () => {
     if (!userName) {
       toast.error('Veuillez d\'abord enregistrer votre nom');
       return;
@@ -90,6 +149,21 @@ export default function ProfilePage() {
     const report = generateReport(progress, userName);
     downloadReportHTML(report);
     toast.success('Rapport téléchargé au format HTML');
+
+    // Also upload to S3 if authenticated
+    if (isAuthenticated) {
+      try {
+        const { formatReportHTML } = await import('@/lib/progressReport');
+        const htmlContent = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Rapport STATERA_Academy — ${report.userName}</title></head><body style="margin:0;padding:20px;background:#0a0a0f;">${formatReportHTML(report)}</body></html>`;
+        await reportUploadMutation.mutateAsync({
+          content: htmlContent,
+          userName,
+          format: 'html',
+        });
+      } catch (err) {
+        console.warn('[Report] Failed to upload HTML to cloud:', err);
+      }
+    }
   };
 
   return (
@@ -120,6 +194,40 @@ export default function ProfilePage() {
               <div className="w-1 h-6 bg-neon-cyan" style={{ boxShadow: '0 0 8px rgba(0,240,255,0.5)' }} />
               <h1 className="font-mono text-xl font-bold tracking-wider text-foreground">PROFIL AGENT</h1>
             </div>
+
+            {/* Auth status banner */}
+            {!isAuthenticated && (
+              <div className="border border-amber-500/20 bg-amber-500/5 p-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <CloudOff className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-mono text-xs text-amber-400">
+                      Mode local — Votre progression est sauvegardée uniquement sur cet appareil.
+                    </p>
+                    <p className="font-mono text-[10px] text-amber-400/60 mt-1">
+                      Connectez-vous pour synchroniser votre progression dans le cloud.
+                    </p>
+                  </div>
+                  <a
+                    href={getLoginUrl()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-neon-cyan/30 text-neon-cyan font-mono text-[11px] tracking-wider hover:bg-neon-cyan/10 transition-colors flex-shrink-0"
+                  >
+                    <LogIn className="w-3 h-3" /> CONNEXION
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {isAuthenticated && (
+              <div className="border border-neon-green/20 bg-neon-green/5 p-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <Cloud className="w-4 h-4 text-neon-green flex-shrink-0" />
+                  <p className="font-mono text-xs text-neon-green">
+                    Connecté{userName ? ` — ${userName}` : ''} • Progression synchronisée dans le cloud
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* User name input */}
             <div className="border border-border/30 bg-dark-surface/40 p-4 mb-4">
@@ -220,20 +328,26 @@ export default function ProfilePage() {
 
               <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
                 Envoyez votre rapport de progression au RSSI (<span className="text-neon-cyan font-mono text-xs">rssi@statera-corp.com</span>) pour attester de votre formation, ou téléchargez-le pour vos archives personnelles.
+                {isAuthenticated && <span className="text-neon-green font-mono text-xs ml-1">(sauvegarde cloud activée)</span>}
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {/* Send by email */}
                 <button
                   onClick={handleSendEmail}
-                  className="flex items-center gap-3 p-4 border border-neon-cyan/20 bg-neon-cyan/5 hover:bg-neon-cyan/10 hover:border-neon-cyan/40 transition-all group cursor-pointer"
+                  disabled={reportSendMutation.isPending}
+                  className="flex items-center gap-3 p-4 border border-neon-cyan/20 bg-neon-cyan/5 hover:bg-neon-cyan/10 hover:border-neon-cyan/40 transition-all group cursor-pointer disabled:opacity-50"
                 >
                   <div className="w-10 h-10 flex items-center justify-center border border-neon-cyan/30 flex-shrink-0" style={{ boxShadow: '0 0 10px rgba(0,240,255,0.15)' }}>
                     <Mail className="w-5 h-5 text-neon-cyan" />
                   </div>
                   <div className="text-left">
-                    <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-cyan transition-colors">ENVOYER AU RSSI</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">Par email</div>
+                    <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-cyan transition-colors">
+                      {reportSendMutation.isPending ? 'ENVOI...' : 'ENVOYER AU RSSI'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {isAuthenticated ? 'Notification + cloud' : 'Par email'}
+                    </div>
                   </div>
                 </button>
 

@@ -3,14 +3,17 @@
  * CyberDiploma: Lightweight overlay that displays the pre-generated diploma.
  * All heavy generation is done by diplomaGenerator.ts in the background.
  * Downloads are instant because the image is already cached.
+ * When authenticated, also creates a diploma record and uploads to S3.
  */
 import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X, FileText, Image as ImageIcon } from 'lucide-react';
+import { Download, X, FileText, Image as ImageIcon, Cloud, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { type UserProgress } from '@/lib/moduleData';
+import { type UserProgress, getLevel } from '@/lib/moduleData';
 import { toast } from 'sonner';
-import { drawPreview, downloadJPG, downloadPDF, isCached, preGenerate } from '@/lib/diplomaGenerator';
+import { drawPreview, downloadJPG, downloadPDF, isCached, preGenerate, getCachedJPGDataUrl } from '@/lib/diplomaGenerator';
+import { trpc } from '@/lib/trpc';
+import { useProgress } from '@/contexts/ProgressContext';
 
 interface CyberDiplomaProps {
   userName: string;
@@ -23,6 +26,11 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [ready, setReady] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [savedToCloud, setSavedToCloud] = useState(false);
+  const { isAuthenticated } = useProgress();
+
+  const createDiplomaMutation = trpc.diploma.create.useMutation();
+  const uploadImageMutation = trpc.diploma.uploadImage.useMutation();
 
   // Draw preview on mount (lightweight, scale 2x)
   useEffect(() => {
@@ -36,6 +44,55 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
       preGenerate(userName, progress);
     }
   }, [userName, progress]);
+
+  // Auto-save to cloud when authenticated and diploma is ready
+  useEffect(() => {
+    if (!isAuthenticated || savedToCloud || !ready) return;
+    
+    const saveToCloud = async () => {
+      try {
+        const level = getLevel(progress.totalXP);
+        const completedCount = progress.completedModules.length;
+        const avgScore = completedCount > 0
+          ? Math.round(Object.values(progress.moduleScores).reduce((a, b) => a + b, 0) / completedCount)
+          : 0;
+
+        // Create diploma record in DB
+        const result = await createDiplomaMutation.mutateAsync({
+          userName,
+          avgScore,
+          totalXP: progress.totalXP,
+          levelNumber: level.level,
+        });
+
+        // Upload image to S3
+        if (result.diploma) {
+          // Ensure the diploma image is generated
+          if (!isCached(userName, progress)) {
+            await preGenerate(userName, progress);
+          }
+          const dataUrl = getCachedJPGDataUrl();
+          if (dataUrl) {
+            // Extract base64 data from data URL
+            const base64Data = dataUrl.split(',')[1];
+            if (base64Data) {
+              await uploadImageMutation.mutateAsync({
+                diplomaId: result.diploma.id,
+                imageData: base64Data,
+                format: 'jpg',
+              });
+            }
+          }
+          setSavedToCloud(true);
+        }
+      } catch (err) {
+        console.warn('[Diploma] Failed to save to cloud:', err);
+        // Non-blocking: diploma still works locally
+      }
+    };
+
+    saveToCloud();
+  }, [isAuthenticated, ready, savedToCloud]);
 
   const handleDownloadJPG = async () => {
     setShowFormatMenu(false);
@@ -84,6 +141,29 @@ export default function CyberDiploma({ userName, progress, onClose }: CyberDiplo
     >
       {/* Controls */}
       <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', gap: '8px', zIndex: 60 }}>
+        {/* Cloud save indicator */}
+        {isAuthenticated && (
+          <div
+            className="flex items-center gap-1.5 px-3 py-2 border"
+            style={{
+              borderColor: savedToCloud ? 'rgba(0,255,136,0.3)' : 'rgba(0,240,255,0.2)',
+              background: savedToCloud ? 'rgba(0,255,136,0.05)' : 'rgba(0,240,255,0.05)',
+            }}
+          >
+            {savedToCloud ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-neon-green" />
+                <span className="font-mono text-[10px] text-neon-green tracking-wider">CLOUD</span>
+              </>
+            ) : (
+              <>
+                <Cloud className="w-3.5 h-3.5 text-neon-cyan animate-pulse" />
+                <span className="font-mono text-[10px] text-neon-cyan tracking-wider">SAUVEGARDE...</span>
+              </>
+            )}
+          </div>
+        )}
+
         <div style={{ position: 'relative' }}>
           <Button
             onClick={() => setShowFormatMenu(!showFormatMenu)}
