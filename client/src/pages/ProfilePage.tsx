@@ -8,11 +8,12 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useProgress } from '@/contexts/ProgressContext';
 import { MODULES, BADGES, LEVELS, getLevel, getNextLevel } from '@/lib/moduleData';
-import { generateReport, generateMailtoLink, downloadReport, downloadReportHTML, formatReportText } from '@/lib/progressReport';
+import { generateReport, downloadReport, downloadReportHTML, formatReportText } from '@/lib/progressReport';
+import { exportReportAndShowInstructions, RSSI_EMAIL } from '@/lib/reportImage';
 import NavBar from '@/components/NavBar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Mail, Download, FileText, Send, User, X, Award, GraduationCap, Cloud, CloudOff, LogIn } from 'lucide-react';
+import { Trophy, Zap, Target, Shield, RotateCcw, CheckCircle2, Image as ImageIcon, Download, FileText, Send, User, X, Award, GraduationCap, Cloud, CloudOff, LogIn } from 'lucide-react';
 import CyberDiploma from '@/components/CyberDiploma';
 import { preGenerate } from '@/lib/diplomaGenerator';
 import { Link } from 'wouter';
@@ -23,13 +24,14 @@ import { getLoginUrl } from '@/const';
 export default function ProfilePage() {
   const { progress, resetProgress, isAuthenticated, userName: authUserName } = useProgress();
   const [showDiploma, setShowDiploma] = useState(false);
-  
+  const [exportingReport, setExportingReport] = useState(false);
+
   // Use auth name if available, otherwise fall back to localStorage
   const [localName, setLocalName] = useState(() => {
     try { return localStorage.getItem('statera-username') || ''; } catch { return ''; }
   });
   const [nameInput, setNameInput] = useState(authUserName || localName);
-  
+
   // Effective user name: auth name takes priority
   const userName = authUserName || localName;
 
@@ -42,7 +44,6 @@ export default function ProfilePage() {
 
   // tRPC mutations for backend integration
   const reportUploadMutation = trpc.report.upload.useMutation();
-  const reportSendMutation = trpc.report.sendToRSSI.useMutation();
 
   const level = getLevel(progress.totalXP);
   const nextLevel = getNextLevel(progress.totalXP);
@@ -79,43 +80,49 @@ export default function ProfilePage() {
     }
   }, [userName, completedCount, totalModules, progress]);
 
-  const handleSendEmail = async () => {
+  /**
+   * Generate the report as a JPG image, download it, then open a window
+   * with instructions for emailing it to the RSSI.
+   */
+  const handleGenerateReportJPG = async () => {
     if (!userName) {
       toast.error('Veuillez d\'abord enregistrer votre nom');
       return;
     }
+
+    setExportingReport(true);
     const report = generateReport(progress, userName);
-    
-    // If authenticated, also send notification to project owner and upload report
-    if (isAuthenticated) {
-      try {
-        const reportText = formatReportText(report);
-        await Promise.all([
-          reportSendMutation.mutateAsync({
-            userName,
-            reportSummary: reportText,
-          }),
-          reportUploadMutation.mutateAsync({
-            content: reportText,
-            userName,
-            format: 'txt',
-          }),
-        ]);
-        toast.success('Rapport envoyé au RSSI et sauvegardé dans le cloud');
-      } catch (err) {
-        console.warn('[Report] Backend send failed, falling back to mailto:', err);
-        // Fallback to mailto
-        const mailtoLink = generateMailtoLink(report);
-        window.open(mailtoLink, '_blank');
-        toast.info('Ouverture du client email (envoi backend indisponible)');
-        return;
+
+    try {
+      const { popupBlocked } = await exportReportAndShowInstructions(report);
+
+      if (popupBlocked) {
+        toast.warning(
+          `Rapport JPG téléchargé. Autorisez les fenêtres pop-up pour voir les instructions d'envoi, ou envoyez-le à ${RSSI_EMAIL}`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success('Rapport JPG téléchargé — suivez les instructions dans le nouvel onglet');
       }
-    } else {
-      // Not authenticated: use mailto fallback
-      const mailtoLink = generateMailtoLink(report);
-      window.open(mailtoLink, '_blank');
-      toast.success('Votre client email va s\'ouvrir avec le rapport pré-rempli');
+    } catch (err) {
+      console.error('[Report] JPG generation failed:', err);
+      toast.error('La génération du rapport JPG a échoué');
+      setExportingReport(false);
+      return;
     }
+
+    // Best-effort cloud archive (never blocks the user flow)
+    try {
+      await reportUploadMutation.mutateAsync({
+        content: formatReportText(report),
+        userName,
+        format: 'txt',
+      });
+    } catch (err) {
+      console.warn('[Report] Failed to archive report in cloud:', err);
+    }
+
+    setExportingReport(false);
   };
 
   const handleDownloadTxt = async () => {
@@ -327,26 +334,25 @@ export default function ProfilePage() {
               </div>
 
               <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-                Envoyez votre rapport de progression au RSSI (<span className="text-neon-cyan font-mono text-xs">rssi@statera-corp.com</span>) pour attester de votre formation, ou téléchargez-le pour vos archives personnelles.
-                {isAuthenticated && <span className="text-neon-green font-mono text-xs ml-1">(sauvegarde cloud activée)</span>}
+                Générez votre rapport de progression en image (JPG) à transmettre au RSSI (<span className="text-neon-cyan font-mono text-xs">{RSSI_EMAIL}</span>) pour attester de votre formation, ou téléchargez-le en texte/HTML pour vos archives personnelles.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Send by email */}
+                {/* Generate JPG report + send instructions */}
                 <button
-                  onClick={handleSendEmail}
-                  disabled={reportSendMutation.isPending}
+                  onClick={handleGenerateReportJPG}
+                  disabled={exportingReport}
                   className="flex items-center gap-3 p-4 border border-neon-cyan/20 bg-neon-cyan/5 hover:bg-neon-cyan/10 hover:border-neon-cyan/40 transition-all group cursor-pointer disabled:opacity-50"
                 >
                   <div className="w-10 h-10 flex items-center justify-center border border-neon-cyan/30 flex-shrink-0" style={{ boxShadow: '0 0 10px rgba(0,240,255,0.15)' }}>
-                    <Mail className="w-5 h-5 text-neon-cyan" />
+                    <ImageIcon className="w-5 h-5 text-neon-cyan" />
                   </div>
                   <div className="text-left">
                     <div className="font-mono text-xs font-bold text-foreground tracking-wider group-hover:text-neon-cyan transition-colors">
-                      {reportSendMutation.isPending ? 'ENVOI...' : 'ENVOYER AU RSSI'}
+                      {exportingReport ? 'GÉNÉRATION...' : 'RAPPORT JPG + ENVOI'}
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {isAuthenticated ? 'Notification + cloud' : 'Par email'}
+                      Image + instructions RSSI
                     </div>
                   </div>
                 </button>
